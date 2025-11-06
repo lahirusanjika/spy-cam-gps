@@ -1,0 +1,12 @@
+{
+  "name": "Spy Cam + GPS + PDF",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:18",
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {}
+  },
+  "postCreateCommand": "cd server && npm install && cd ../pdf-payload && pip install -r requirements.txt",
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": { "label": "Spy Server", "onAutoForward": "notify" }
+  }
+}

